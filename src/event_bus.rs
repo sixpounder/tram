@@ -8,12 +8,21 @@ use std::{
 #[derive(Debug, PartialEq)]
 pub enum Error {
     BusLock,
+    Disconnected
 }
 
 pub struct BusRef<E, V> {
     marker: std::marker::PhantomData<E>,
     listeners: std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>,
     event_count: Cell<usize>,
+    event_cap: usize
+}
+
+impl<E, V> BusRef<E, V> {
+    pub fn disconnected(&self) -> bool {
+        let event_count = self.event_count.get();
+        event_count != 0 && event_count == self.event_cap
+    }
 }
 
 impl<E, V> BusRef<E, V> {
@@ -22,6 +31,16 @@ impl<E, V> BusRef<E, V> {
             marker: std::marker::PhantomData,
             listeners: HashMap::new(),
             event_count: Cell::new(0),
+            event_cap: 0
+        }
+    }
+    
+    fn bound(max_event_count: usize) -> Self {
+        Self {
+            marker: std::marker::PhantomData,
+            listeners: HashMap::new(),
+            event_count: Cell::new(0),
+            event_cap: max_event_count
         }
     }
 }
@@ -45,7 +64,7 @@ impl<E, V> BusRef<E, V> {
 ///     Started
 /// }
 ///
-/// let bus: EventBus<EventType> = EventBus::new();
+/// let bus: EventBus<EventType> = EventBus::unbound();
 /// let status = Rc::new(RefCell::new(Status::Stopped));
 /// let status_closure = Rc::clone(&status);
 /// bus.on(EventType::Start, move || {
@@ -63,9 +82,15 @@ pub struct EventBus<E, V> {
 }
 
 impl<E, V> EventBus<E, V> {
-    pub fn new() -> Self {
+    pub fn unbound() -> Self {
         Self {
             bus: Arc::new(Mutex::new(BusRef::new())),
+        }
+    }
+    
+    pub fn bound(limit: usize) -> Self {
+        Self {
+            bus: Arc::new(Mutex::new(BusRef::bound(limit))),
         }
     }
 }
@@ -99,38 +124,29 @@ where
     ///
     /// When used this way the value passed to `on` closures will always be `None`.
     pub fn emit(&self, event: E) -> Result<(), Error> {
-        if let Ok(bus_lock) = self.bus.lock() {
-            let event_count = bus_lock.event_count.get();
-            bus_lock.event_count.set(event_count + 1);
-
-            match bus_lock.listeners.get(&event) {
-                Some(listeners) => {
-                    let _results = listeners.iter().map(|l| l(None)).collect::<()>();
-                    Ok(())
-                }
-                None => Ok(()),
-            }
-        } else {
-            Err(Error::BusLock)
-        }
+        self.emit_with_value(event, None)
     }
     
     /// Emits an `event` with a `value` associated to it,
     /// firing all listeners connected to it via `on`.
     pub fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
         if let Ok(bus_lock) = self.bus.lock() {
-            let event_count = bus_lock.event_count.get();
-            bus_lock.event_count.set(event_count + 1);
+            if bus_lock.disconnected() {
+                Err(Error::Disconnected)
+            } else {
+                let event_count = bus_lock.event_count.get();
+                bus_lock.event_count.set(event_count + 1);
 
-            match bus_lock.listeners.get(&event) {
-                Some(listeners) => {
-                    let _results = listeners
-                        .iter()
-                        .map(|l| l(value))
-                        .collect::<()>();
-                    Ok(())
+                match bus_lock.listeners.get(&event) {
+                    Some(listeners) => {
+                        let _results = listeners
+                            .iter()
+                            .map(|l| l(value))
+                            .collect::<()>();
+                        Ok(())
+                    }
+                    None => Ok(()),
                 }
-                None => Ok(()),
             }
         } else {
             Err(Error::BusLock)
@@ -139,6 +155,11 @@ where
 
     pub fn event_count(&self) -> usize {
         self.bus.lock().unwrap().event_count.get()
+    }
+    
+    pub fn disconnected(&self) -> bool {
+        let bus_lock = self.bus.lock().unwrap();
+        bus_lock.disconnected()
     }
 }
 
@@ -175,12 +196,12 @@ mod test {
 
     #[test]
     fn create_bus() {
-        let _bus: EventBus<u8, ()> = EventBus::new();
+        let _bus: EventBus<u8, ()> = EventBus::unbound();
     }
 
     #[test]
     fn listen_emit_api() {
-        let bus: EventBus<EventType, ()> = EventBus::new();
+        let bus: EventBus<EventType, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(Status::Stopped));
         let status_closure = Rc::clone(&status);
         let status_closure_2 = Rc::clone(&status);
@@ -207,7 +228,7 @@ mod test {
 
     #[test]
     fn listen_emit_api_repeat() {
-        let bus: EventBus<u8, ()> = EventBus::new();
+        let bus: EventBus<u8, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(0));
         let status2 = Rc::clone(&status);
         bus.on(1u8, move |_| {
@@ -227,7 +248,7 @@ mod test {
     
     #[test]
     fn threaded() {
-        let bus: EventBus<EventType, ()> = EventBus::new();
+        let bus: EventBus<EventType, ()> = EventBus::unbound();
         let bus_clone = bus.clone();
         let status = Arc::new(Mutex::new(Status::Stopped));
         let final_status = Arc::clone(&status);
@@ -252,7 +273,7 @@ mod test {
     
     #[test]
     fn with_data() {
-        let bus: EventBus<EventType, u8> = EventBus::new();
+        let bus: EventBus<EventType, u8> = EventBus::unbound();
         let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
         let status_closure = Rc::clone(&status);
 
@@ -265,6 +286,14 @@ mod test {
 
         assert_eq!(*status.borrow(), Some(123));
         assert_eq!(bus.event_count(), 1);
+    }
+    
+    #[test]
+    #[should_panic]
+    fn exceed_bounds() {
+        let bus: EventBus<EventType, u8> = EventBus::bound(1);
+        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
+        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
     }
 }
 
