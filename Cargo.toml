@@ -3,7 +3,8 @@ name = "tram"
 authors = [
     "Andrea Coronese <sixpounder@protonmail.com>"
 ]
-version = "0.1.0"
+repository = "https://github.com/sixpounder/tram"
+version = "0.2.0"
 edition = "2021"
 license-file = "LICENSE.txt"
 description = "A simple event bus that can be cloned and shared across threads"
