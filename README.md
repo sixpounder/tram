@@ -1,6 +1,11 @@
-A simple event bus that can be cloned and shared across threads
+A simple event bus that can be cloned and shared across threads.
 
-# Example
+## Limitations
+
+At present the only limitation is the inability to use the same `EventBus` inside
+`on` blocks because it will lead to a deadlock.
+
+## Example
 
 ```rust
 #[derive(PartialEq, Eq, Hash)]

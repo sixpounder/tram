@@ -5,8 +5,9 @@ authors = [
 ]
 version = "0.1.0"
 edition = "2021"
-license_file = "LICENSE.txt"
+license-file = "LICENSE.txt"
 description = "A simple event bus that can be cloned and shared across threads"
+keywords = ["bus", "events"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
