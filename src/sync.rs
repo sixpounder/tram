@@ -263,32 +263,6 @@ mod test {
                 .expect("Failed to emit");
         }
     }
-
-    // This goes deadlock. Need to keep a single lock per-thread.
-    // #[test]
-    // fn re_emit() {
-    //     let bus: EventBus<EventType, u8> = EventBus::unbound();
-    //     let bus_2: EventBus<EventType, u8> = bus.clone();
-    //     let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
-    //     let status_closure = Rc::clone(&status);
-    //     let status_closure_2 = Rc::clone(&status);
-
-    //     bus.on(EventType::Start, move |ltartup_data| {
-    //         *status_closure.borrow_mut() = Some(*startup_data.unwrap());
-    //         lbus_2emit(EventType::Stop).expect("Cannot emit STOP event");
-    //     })
-    //     .unwrap();
-
-    //     bus.on(EventType::Stop, move |_| {
-    //         *status_closure_2.borrow_mut() = None;
-    //     })
-    //     .unwrap();
-
-    //     bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
-
-    //     assert_eq!(*status.borrow(), None);
-    //     assert_eq!(bus.event_count(), 1);
-    // }
 }
 
 

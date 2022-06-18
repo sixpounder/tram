@@ -43,15 +43,17 @@ pub struct EventBus<E, V> {
 impl<E, V> EventBus<E, V> {
     /// Creates an unbound bus that can emit any number of events
     pub fn unbound() -> Self {
-        Self {
-            bus: Rc::new(RefCell::new(BusRef::unbound())),
-        }
+        Self::construct(BusRef::unbound())
     }
 
     /// Creates a bound bus that can emit up to `limit` events
     pub fn bound(limit: usize) -> Self {
+        Self::construct(BusRef::bound(limit))
+    }
+
+    fn construct(bus: BusRef<E, V>) -> Self {
         Self {
-            bus: Rc::new(RefCell::new(BusRef::bound(limit))),
+            bus: Rc::new(RefCell::new(bus)),
         }
     }
 
@@ -171,54 +173,6 @@ mod test {
         assert_eq!(*status.borrow(), 4);
         assert_eq!(bus.event_count(), 5);
     }
-
-    // #[test]
-    // fn threaded_on() {
-    //     let bus: EventBus<EventType, ()> = EventBus::unbound();
-    //     let mut bus_clone = bus.clone();
-    //     let status = Rc::new(RefCell::new(Status::Stopped));
-    //     let final_status = Rc::clone(&status);
-
-    //     let t1 = std::thread::spawn(move || {
-    //         bus_clone
-    //             .on(EventType::Start, move |_| {
-    //                 let mut status_lock = status.borrow_mut();
-    //                 *status_lock = Status::Started;
-    //             })
-    //             .unwrap();
-    //     });
-
-    //     t1.join().unwrap();
-
-    //     bus.emit(EventType::Start).unwrap();
-
-    //     let final_status_lock = final_status.lock().unwrap();
-    //     assert_eq!(*final_status_lock, Status::Started)
-    // }
-
-    // #[test]
-    // fn threaded_emit() {
-    //     let bus: EventBus<EventType, ()> = EventBus::unbound();
-    //     let mut bus_clone = bus.clone();
-    //     let status = Rc::new(RefCell::new(Status::Stopped));
-    //     let final_status = Rc::clone(&status);
-
-    //     let t1 = std::thread::spawn(move || {
-    //         bus.emit(EventType::Start).unwrap();
-    //     });
-
-    //     bus_clone
-    //         .on(EventType::Start, move |_| {
-    //             let mut status_lock = status.borrow_mut();
-    //             *status_lock = Status::Started;
-    //         })
-    //         .unwrap();
-
-    //     t1.join().unwrap();
-
-    //     let final_status_lock = final_status.lock().unwrap();
-    //     assert_eq!(*final_status_lock, Status::Started)
-    // }
 
     #[test]
     fn with_data() {

@@ -1,4 +1,8 @@
-use std::{cell::{RefCell, Cell}, collections::HashMap, hash::Hash};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    hash::Hash,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {

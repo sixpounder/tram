@@ -9,6 +9,8 @@ for `unsync` variant (thou this is a work in progress).
 ## Example
 
 ```rust
+use tram::prelude::*;
+
 #[derive(PartialEq, Eq, Hash)]
 enum EventType {
     Start,
@@ -21,7 +23,7 @@ enum Status {
     Started,
 }
 
-let mut bus: EventBus<EventType> = EventBus::unbound();
+let bus: EventBus<EventType> = EventBus::unbound();
 
 let status = Rc::new(RefCell::new(Status::Stopped));
 let status_closure = Rc::clone(&status);
@@ -51,7 +53,7 @@ assert_eq!(bus.event_count(), 2);
 ## Using it in threads
 
 ```rust
-let mut bus: EventBus<EventType, ()> = EventBus::unbound();
+let bus: EventBus<EventType, ()> = EventBus::unbound();
 let bus_clone = bus.clone();
 
 let status = Arc::new(Mutex::new(Status::Stopped));
