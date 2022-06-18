@@ -7,26 +7,24 @@ pub enum Error {
 }
 
 pub trait EventEmitter<E, V> {
+    /// Adds a listener `f` for and `event`
     fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(Option<&V>) + 'static;
+
+    /// Emits an `event` with a `value` associated to it,
+    /// firing all listeners connected to it via `on`.
     fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error>;
 
+    /// Emits an `event`, firing all listeners connected to it via `on`.
+    ///
+    /// When used this way the value passed to `on` closures will always be `None`.
     fn emit(&self, event: E) -> Result<(), Error> {
         self.emit_with_value(event, None)
     }
 }
 
-// pub struct BusLock<'a, E, V> {
-//     mutex: &'a MutexGuard<'a, BusRef<E, V>>,
-// }
-
-// impl<'a, E, V> BusLock<'a, E, V> {
-//     pub(crate) fn inner(&self) -> &'a MutexGuard<'a, BusRef<E, V>> {
-//         self.mutex
-//     }
-// }
-
+/// Inner implementation of a bus structure
 pub struct BusRef<E, V> {
     marker: std::marker::PhantomData<E>,
     listeners: std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>,

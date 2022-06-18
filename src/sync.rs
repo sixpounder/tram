@@ -81,7 +81,6 @@ impl<E, V> EventEmitter<E, V> for EventBus<E, V>
 where
     E: Eq + Hash,
 {
-    /// Adds a listener `f` for and `event`
     fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(Option<&V>) + 'static,
@@ -93,15 +92,10 @@ where
         }
     }
 
-    /// Emits an `event`, firing all listeners connected to it via `on`.
-    ///
-    /// When used this way the value passed to `on` closures will always be `None`.
     fn emit(&self, event: E) -> Result<(), Error> {
         self.emit_with_value(event, None)
     }
 
-    /// Emits an `event` with a `value` associated to it,
-    /// firing all listeners connected to it via `on`.
     fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
         if let Ok(bus_lock) = self.aquire_bus_lock() {
             bus_lock.emit_with_value(event, value)
