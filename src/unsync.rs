@@ -69,11 +69,11 @@ impl<E, V> EventEmitter<E, V> for EventBus<E, V>
 where
     E: Eq + Hash,
 {
-    fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
+    fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(Option<&V>) + 'static,
     {
-        if let Ok(mut bus_lock) = self.bus.try_borrow_mut() {
+        if let Ok(bus_lock) = self.bus.try_borrow_mut() {
             bus_lock.on(event, f)
         } else {
             Err(Error::BusLock)
@@ -127,7 +127,7 @@ mod test {
 
     #[test]
     fn listen_emit_api() {
-        let mut bus: EventBus<EventType, ()> = EventBus::unbound();
+        let bus: EventBus<EventType, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(Status::Stopped));
         let status_closure = Rc::clone(&status);
         let status_closure_2 = Rc::clone(&status);
@@ -154,7 +154,7 @@ mod test {
 
     #[test]
     fn listen_emit_api_repeat() {
-        let mut bus: EventBus<u8, ()> = EventBus::unbound();
+        let bus: EventBus<u8, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(0));
         let status2 = Rc::clone(&status);
         bus.on(1u8, move |_| {
@@ -222,7 +222,7 @@ mod test {
 
     #[test]
     fn with_data() {
-        let mut bus: EventBus<EventType, u8> = EventBus::unbound();
+        let bus: EventBus<EventType, u8> = EventBus::unbound();
         let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
         let status_closure = Rc::clone(&status);
 

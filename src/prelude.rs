@@ -1,14 +1,17 @@
-use std::{cell::Cell, collections::HashMap, hash::Hash};
+use std::{cell::{RefCell, Cell}, collections::HashMap, hash::Hash};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
+    /// Usually fired then a lock or a borrow cannot be obtained for a bus
     BusLock,
+
+    /// Fired when a bus has reached its event count limit (if it has one)
     Disconnected,
 }
 
 pub trait EventEmitter<E, V> {
     /// Adds a listener `f` for and `event`
-    fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
+    fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(Option<&V>) + 'static;
 
@@ -27,7 +30,7 @@ pub trait EventEmitter<E, V> {
 /// Inner implementation of a bus structure
 pub struct BusRef<E, V> {
     marker: std::marker::PhantomData<E>,
-    listeners: std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>,
+    listeners: RefCell<std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>>,
     emit_count: Cell<usize>,
     emit_limit: usize,
 }
@@ -36,7 +39,7 @@ impl<E, V> BusRef<E, V> {
     pub(crate) fn unbound() -> Self {
         Self {
             marker: std::marker::PhantomData,
-            listeners: HashMap::new(),
+            listeners: RefCell::new(HashMap::new()),
             emit_count: Cell::new(0),
             emit_limit: 0,
         }
@@ -45,7 +48,7 @@ impl<E, V> BusRef<E, V> {
     pub(crate) fn bound(max_emit_count: usize) -> Self {
         Self {
             marker: std::marker::PhantomData,
-            listeners: HashMap::new(),
+            listeners: RefCell::new(HashMap::new()),
             emit_count: Cell::new(0),
             emit_limit: max_emit_count,
         }
@@ -66,19 +69,19 @@ where
     E: Hash + Eq,
 {
     /// Adds a listener `f` for and `event`
-    fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
+    fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(Option<&V>) + 'static,
     {
         let boxed_fn = Box::new(f);
-
-        match self.listeners.get_mut(&event) {
+        let mut listeners = self.listeners.borrow_mut();
+        match listeners.get_mut(&event) {
             Some(existing_event) => {
                 existing_event.push(boxed_fn);
             }
             None => {
                 let v: Vec<Box<dyn Fn(Option<&V>) + 'static>> = vec![boxed_fn];
-                self.listeners.insert(event, v);
+                listeners.insert(event, v);
             }
         }
 
@@ -100,10 +103,11 @@ where
         } else {
             let event_count = self.emit_count.get();
             self.emit_count.set(event_count + 1);
+            let listeners = self.listeners.borrow();
 
-            match self.listeners.get(&event) {
-                Some(listeners) => {
-                    let _results = listeners.iter().map(|l| l(value)).collect::<()>();
+            match listeners.get(&event) {
+                Some(listeners_fns) => {
+                    let _results = listeners_fns.iter().map(|l| l(value)).collect::<()>();
                     Ok(())
                 }
                 None => Ok(()),
