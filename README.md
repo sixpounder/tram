@@ -3,7 +3,8 @@ A simple event bus that can be cloned and shared across threads.
 ## Limitations
 
 At present the only limitation is the inability to use the same `EventBus` inside
-`on` blocks because it will lead to a deadlock.
+`on` blocks because it would lead to a deadlock for `sync` variants and to an `Error`
+for `unsync` variant (thou this is a work in progress).
 
 ## Example
 

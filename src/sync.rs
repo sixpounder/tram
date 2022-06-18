@@ -1,106 +1,20 @@
 use std::{
-    collections::HashMap,
     hash::Hash,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-#[derive(Debug, PartialEq)]
-pub enum Error {
-    BusLock,
-    Disconnected
-}
+use crate::prelude::{BusRef, Error, EventEmitter};
 
-pub struct BusRef<E, V> {
-    marker: std::marker::PhantomData<E>,
-    listeners: std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>,
-    emit_count: usize,
-    emit_limit: usize,
-}
-
-impl<E, V> BusRef<E, V> {
-    fn unbound() -> Self {
-        Self {
-            marker: std::marker::PhantomData,
-            listeners: HashMap::new(),
-            emit_count: 0,
-            emit_limit: 0,
-        }
-    }
-    
-    fn bound(max_emit_count: usize) -> Self {
-        Self {
-            marker: std::marker::PhantomData,
-            listeners: HashMap::new(),
-            emit_count: 0,
-            emit_limit: max_emit_count,
-        }
-    }
-
-    pub fn disconnected(&self) -> bool {
-        let event_count = self.emit_count;
-        event_count != 0 && event_count == self.emit_limit
-    }
-}
-
-impl<E, V> BusRef<E, V> where E: Hash + Eq {
-    /// Adds a listener `f` for and `event`
-    pub fn on<F: Fn(Option<&V>) + 'static>(&mut self, event: E, f: F) -> Result<(), Error> {
-        let boxed_fn = Box::new(f);
-
-        match self.listeners.get_mut(&event) {
-            Some(existing_event) => {
-                existing_event.push(boxed_fn);
-            }
-            None => {
-                let v: Vec<Box<dyn Fn(Option<&V>) + 'static>> = vec![boxed_fn];
-                self.listeners.insert(event, v);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Emits an `event`, firing all listeners connected to it via `on`.
-    ///
-    /// When used this way the value passed to `on` closures will always be `None`.
-    pub fn emit(&mut self, event: E) -> Result<(), Error> {
-        self.emit_with_value(event, None)
-    }
-
-    /// Emits an `event` with a `value` associated to it,
-    /// firing all listeners connected to it via `on`.
-    pub fn emit_with_value(&mut self, event: E, value: Option<&V>) -> Result<(), Error> {
-        if self.disconnected() {
-            Err(Error::Disconnected)
-        } else {
-            let event_count = self.emit_count;
-            self.emit_count = event_count + 1;
-
-            match self.listeners.get(&event) {
-                Some(listeners) => {
-                    let _results = listeners
-                        .iter()
-                        .map(|l| l(value))
-                        .collect::<()>();
-                    Ok(())
-                }
-                None => Ok(()),
-            }
-        }
-    }
-
-    pub fn event_count(&self) -> usize {
-        self.emit_count
-    }
-}
-
-/// An event bus that can be cloned and shared across threads
+/// An event bus that can be cloned and shared across threads. If you do not
+/// need to share the bus across threads use `unsync::EventBus` which is
+/// more efficient in terms of performance since it doens't need to hold
+/// locks on resources
 ///
 /// # Example
 ///
 /// ```ignore
-/// # use crate::EventBus;
-/// # use std::{cell::RefCell, rc::Rc};
+/// use tram::sync::EventBus;
+/// use std::{cell::RefCell, rc::Rc};
 /// #[derive(PartialEq, Eq, Hash)]
 /// enum EventType {
 ///     Start,
@@ -128,7 +42,7 @@ impl<E, V> BusRef<E, V> where E: Hash + Eq {
 /// assert_eq!(bus.event_count(), 1);
 /// ```
 pub struct EventBus<E, V> {
-    bus: Arc<Mutex<BusRef<E, V>>>
+    bus: Arc<Mutex<BusRef<E, V>>>,
 }
 
 impl<E, V> EventBus<E, V> {
@@ -138,21 +52,40 @@ impl<E, V> EventBus<E, V> {
             bus: Arc::new(Mutex::new(BusRef::unbound())),
         }
     }
-    
+
     /// Creates a bound bus that can emit up to `limit` events
     pub fn bound(limit: usize) -> Self {
         Self {
             bus: Arc::new(Mutex::new(BusRef::bound(limit))),
         }
     }
+
+    /// Returns `true` if this bus has exausted its allowed max number of emits
+    pub fn disconnected(&self) -> bool {
+        let bus_lock = self.aquire_bus_lock().unwrap();
+        bus_lock.disconnected()
+    }
+
+    fn aquire_bus_lock(
+        &self,
+    ) -> Result<MutexGuard<'_, BusRef<E, V>>, PoisonError<MutexGuard<'_, BusRef<E, V>>>> {
+        self.bus.lock()
+    }
+
+    pub fn event_count(&self) -> usize {
+        self.aquire_bus_lock().unwrap().event_count()
+    }
 }
 
-impl<E, V> EventBus<E, V>
+impl<E, V> EventEmitter<E, V> for EventBus<E, V>
 where
     E: Eq + Hash,
 {
     /// Adds a listener `f` for and `event`
-    pub fn on<F: Fn(Option<&V>) + 'static>(&self, event: E, f: F) -> Result<(), Error> {
+    fn on<F>(&mut self, event: E, f: F) -> Result<(), Error>
+    where
+        F: Fn(Option<&V>) + 'static,
+    {
         if let Ok(mut bus_lock) = self.aquire_bus_lock() {
             bus_lock.on(event, f)
         } else {
@@ -163,32 +96,18 @@ where
     /// Emits an `event`, firing all listeners connected to it via `on`.
     ///
     /// When used this way the value passed to `on` closures will always be `None`.
-    pub fn emit(&self, event: E) -> Result<(), Error> {
+    fn emit(&self, event: E) -> Result<(), Error> {
         self.emit_with_value(event, None)
     }
-    
+
     /// Emits an `event` with a `value` associated to it,
     /// firing all listeners connected to it via `on`.
-    pub fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
-        if let Ok(mut bus_lock) = self.aquire_bus_lock() {
+    fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
+        if let Ok(bus_lock) = self.aquire_bus_lock() {
             bus_lock.emit_with_value(event, value)
         } else {
             Err(Error::BusLock)
         }
-    }
-
-    pub fn event_count(&self) -> usize {
-        self.aquire_bus_lock().unwrap().emit_count
-    }
-    
-    /// Returns `true` if this bus has exausted its allowed max number of emits
-    pub fn disconnected(&self) -> bool {
-        let bus_lock = self.aquire_bus_lock().unwrap();
-        bus_lock.disconnected()
-    }
-
-    fn aquire_bus_lock(&self) -> Result<MutexGuard<'_, BusRef<E, V>>, PoisonError<MutexGuard<'_, BusRef<E, V>>>> {
-        self.bus.lock()
     }
 }
 
@@ -210,7 +129,7 @@ mod test {
 
     use std::cell::RefCell;
     use std::rc::Rc;
-    
+
     #[derive(PartialEq, Eq, Hash)]
     enum EventType {
         Start,
@@ -230,7 +149,7 @@ mod test {
 
     #[test]
     fn listen_emit_api() {
-        let bus: EventBus<EventType, ()> = EventBus::unbound();
+        let mut bus: EventBus<EventType, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(Status::Stopped));
         let status_closure = Rc::clone(&status);
         let status_closure_2 = Rc::clone(&status);
@@ -257,7 +176,7 @@ mod test {
 
     #[test]
     fn listen_emit_api_repeat() {
-        let bus: EventBus<u8, ()> = EventBus::unbound();
+        let mut bus: EventBus<u8, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(0));
         let status2 = Rc::clone(&status);
         bus.on(1u8, move |_| {
@@ -274,19 +193,21 @@ mod test {
         assert_eq!(*status.borrow(), 4);
         assert_eq!(bus.event_count(), 5);
     }
-    
+
     #[test]
     fn threaded_on() {
         let bus: EventBus<EventType, ()> = EventBus::unbound();
-        let bus_clone = bus.clone();
+        let mut bus_clone = bus.clone();
         let status = Arc::new(Mutex::new(Status::Stopped));
         let final_status = Arc::clone(&status);
-        
+
         let t1 = std::thread::spawn(move || {
-            bus_clone.on(EventType::Start, move |_| {
-                let mut status_lock = status.lock().unwrap();
-                *status_lock = Status::Started;
-            }).unwrap();
+            bus_clone
+                .on(EventType::Start, move |_| {
+                    let mut status_lock = status.lock().unwrap();
+                    *status_lock = Status::Started;
+                })
+                .unwrap();
         });
 
         t1.join().unwrap();
@@ -300,28 +221,30 @@ mod test {
     #[test]
     fn threaded_emit() {
         let bus: EventBus<EventType, ()> = EventBus::unbound();
-        let bus_clone = bus.clone();
+        let mut bus_clone = bus.clone();
         let status = Arc::new(Mutex::new(Status::Stopped));
         let final_status = Arc::clone(&status);
 
         let t1 = std::thread::spawn(move || {
             bus.emit(EventType::Start).unwrap();
         });
-        
-        bus_clone.on(EventType::Start, move |_| {
-            let mut status_lock = status.lock().unwrap();
-            *status_lock = Status::Started;
-        }).unwrap();
+
+        bus_clone
+            .on(EventType::Start, move |_| {
+                let mut status_lock = status.lock().unwrap();
+                *status_lock = Status::Started;
+            })
+            .unwrap();
 
         t1.join().unwrap();
-        
+
         let final_status_lock = final_status.lock().unwrap();
         assert_eq!(*final_status_lock, Status::Started)
     }
-    
+
     #[test]
     fn with_data() {
-        let bus: EventBus<EventType, u8> = EventBus::unbound();
+        let mut bus: EventBus<EventType, u8> = EventBus::unbound();
         let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
         let status_closure = Rc::clone(&status);
 
@@ -330,18 +253,20 @@ mod test {
         })
         .unwrap();
 
-        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
+        bus.emit_with_value(EventType::Start, Some(&123))
+            .expect("Failed to emit");
 
         assert_eq!(*status.borrow(), Some(123));
         assert_eq!(bus.event_count(), 1);
     }
-    
+
     #[test]
     #[should_panic]
     fn exceed_bounds() {
         let bus: EventBus<EventType, u8> = EventBus::bound(5);
         for i in 0..10 {
-            bus.emit_with_value(EventType::Start, Some(&i)).expect("Failed to emit");
+            bus.emit_with_value(EventType::Start, Some(&i))
+                .expect("Failed to emit");
         }
     }
 
@@ -354,9 +279,9 @@ mod test {
     //     let status_closure = Rc::clone(&status);
     //     let status_closure_2 = Rc::clone(&status);
 
-    //     bus.on(EventType::Start, move |startup_data| {
+    //     bus.on(EventType::Start, move |ltartup_data| {
     //         *status_closure.borrow_mut() = Some(*startup_data.unwrap());
-    //         bus_2.emit(EventType::Stop).expect("Cannot emit STOP event");
+    //         lbus_2emit(EventType::Stop).expect("Cannot emit STOP event");
     //     })
     //     .unwrap();
 
@@ -371,4 +296,5 @@ mod test {
     //     assert_eq!(bus.event_count(), 1);
     // }
 }
+
 
