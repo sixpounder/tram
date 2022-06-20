@@ -37,7 +37,7 @@ use crate::prelude::{BusRef, Error, EventEmitter};
 /// assert_eq!(bus.event_count(), 1);
 /// ```
 pub struct EventBus<E, V> {
-    bus: Rc<RefCell<BusRef<E, V>>>,
+    bus: Rc<RefCell<BusRef<E, V>>>
 }
 
 impl<E, V> EventBus<E, V> {
@@ -57,11 +57,16 @@ impl<E, V> EventBus<E, V> {
         }
     }
 
-    /// Returns `true` if this bus has exausted its allowed max number of emits
+    /// Returns `true` if this bus has exausted its allowed max number of emits.
+    ///
+    /// This method can panic if the bus can't be locked for inquiry.
     pub fn disconnected(&self) -> bool {
         self.bus.borrow().disconnected()
     }
 
+    /// The current number of events emitted on this bus.
+    ///
+    /// This method can panic if the bus can't be locked for inquiry.
     pub fn event_count(&self) -> usize {
         self.bus.borrow().event_count()
     }

@@ -78,18 +78,22 @@ where
         F: Fn(Option<&V>) + 'static,
     {
         let boxed_fn = Box::new(f);
-        let mut listeners = self.listeners.borrow_mut();
-        match listeners.get_mut(&event) {
-            Some(existing_event) => {
-                existing_event.push(boxed_fn);
-            }
-            None => {
-                let v: Vec<Box<dyn Fn(Option<&V>) + 'static>> = vec![boxed_fn];
-                listeners.insert(event, v);
-            }
-        }
+        match self.listeners.try_borrow_mut() {
+            Ok(mut listeners) => {
+                match listeners.get_mut(&event) {
+                    Some(existing_event) => {
+                        existing_event.push(boxed_fn);
+                    }
+                    None => {
+                        let v: Vec<Box<dyn Fn(Option<&V>) + 'static>> = vec![boxed_fn];
+                        listeners.insert(event, v);
+                    }
+                }
 
-        Ok(())
+                Ok(())
+            },
+            Err(_) => Err(Error::BusLock)
+        }
     }
 
     /// Emits an `event`, firing all listeners connected to it via `on`.

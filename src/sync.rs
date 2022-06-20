@@ -178,14 +178,12 @@ mod test {
         })
         .unwrap();
 
-        bus.emit(1).expect("Failed to emit");
-        bus.emit(1).expect("Failed to emit");
-        bus.emit(1).expect("Failed to emit");
-        bus.emit(1).expect("Failed to emit");
-        bus.emit(200).expect("Failed to emit");
+        for _ in 0..4 {
+            bus.emit(1).expect("Failed to emit");
+        }
 
         assert_eq!(*status.borrow(), 4);
-        assert_eq!(bus.event_count(), 5);
+        assert_eq!(bus.event_count(), 4);
     }
 
     #[test]
