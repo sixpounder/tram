@@ -7,7 +7,7 @@ reference provided to the closure instead.
 ## Example
 
 ```rust
-use tram::prelude::*;
+use tram::{prelude::*, unsync::EventBus};
 
 #[derive(PartialEq, Eq, Hash)]
 enum EventType {
@@ -51,6 +51,8 @@ assert_eq!(bus.event_count(), 2);
 ## Using it in threads
 
 ```rust
+use tram::{prelude::*, sync::EventBus};
+
 let bus: EventBus<EventType, ()> = EventBus::unbound();
 let bus_clone = bus.clone();
 
