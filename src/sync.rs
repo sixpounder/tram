@@ -12,9 +12,10 @@ use crate::prelude::{BusRef, Error, EventEmitter};
 ///
 /// # Example
 ///
-/// ```ignore
-/// use tram::sync::EventBus;
+/// ```
+/// use tram::{prelude::*, sync::EventBus};
 /// use std::{cell::RefCell, rc::Rc};
+///
 /// #[derive(PartialEq, Eq, Hash)]
 /// enum EventType {
 ///     Start,
@@ -31,7 +32,7 @@ use crate::prelude::{BusRef, Error, EventEmitter};
 /// let status = Rc::new(RefCell::new(Status::Stopped));
 /// let status_closure = Rc::clone(&status);
 ///
-/// bus.on(EventType::Start, move |_| {
+/// bus.on(EventType::Start, move |_bus, _| {
 ///     *status_closure.borrow_mut() = Status::Started;
 /// })
 /// .expect("Failed to listen for this event");
