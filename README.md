@@ -1,10 +1,8 @@
 A simple event bus that can be cloned and shared across threads.
 
-## Limitations
-
-At present the only limitation is the inability to use the same `EventBus` inside
-`on` blocks because it would lead to a deadlock for `sync` variants and to an `Error`
-for `unsync` variant (thou this is a work in progress).
+## Emit inside `on` blocks
+To re-emit events inside `on` closures do not clone the original bus, use the bus
+reference provided to the closure instead.
 
 ## Example
 
@@ -29,12 +27,12 @@ let status = Rc::new(RefCell::new(Status::Stopped));
 let status_closure = Rc::clone(&status);
 let status_closure_2 = Rc::clone(&status);
 
-bus.on(EventType::Start, move || {
+bus.on(EventType::Start, move |_bus, _| {
     *status_closure.borrow_mut() = Status::Started;
 })
 .unwrap();
 
-bus.on(EventType::Stop, move || {
+bus.on(EventType::Stop, move |_bus, _| {
     *status_closure_2.borrow_mut() = Status::Stopped;
 })
 .unwrap();
@@ -60,7 +58,7 @@ let status = Arc::new(Mutex::new(Status::Stopped));
 let final_status = Arc::clone(&status);
 
 let t1 = std::thread::spawn(move || {
-    bus.on(EventType::Start, move |_| {
+    bus.on(EventType::Start, move |_bus, _| {
         let mut status_lock = status.lock().unwrap();
         *status_lock = Status::Started;
     }).unwrap();
@@ -84,7 +82,7 @@ let bus: EventBus<EventType, u8> = EventBus::unbound();
 let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
 let status_closure = Rc::clone(&status);
 
-bus.on(EventType::Start, move |startup_data| {
+bus.on(EventType::Start, move |_bus, startup_data| {
     *status_closure.borrow_mut() = Some(*startup_data.unwrap());
 })
 .unwrap();

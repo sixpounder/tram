@@ -17,7 +17,7 @@ pub trait EventEmitter<E, V> {
     /// Adds a listener `f` for and `event`
     fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
-        F: Fn(Option<&V>) + 'static;
+        F: Fn(&BusRef<E, V>, Option<&V>) + 'static;
 
     /// Emits an `event` with a `value` associated to it,
     /// firing all listeners connected to it via `on`.
@@ -34,7 +34,7 @@ pub trait EventEmitter<E, V> {
 /// Inner implementation of a bus structure
 pub struct BusRef<E, V> {
     marker: std::marker::PhantomData<E>,
-    listeners: RefCell<std::collections::HashMap<E, Vec<Box<dyn Fn(Option<&V>)>>>>,
+    listeners: RefCell<HashMap<E, Vec<Box<dyn Fn(&Self, Option<&V>)>>>>,
     emit_count: Cell<usize>,
     emit_limit: usize,
 }
@@ -75,7 +75,7 @@ where
     /// Adds a listener `f` for and `event`
     fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
-        F: Fn(Option<&V>) + 'static,
+        F: Fn(&Self, Option<&V>) + 'static,
     {
         let boxed_fn = Box::new(f);
         match self.listeners.try_borrow_mut() {
@@ -85,7 +85,7 @@ where
                         existing_event.push(boxed_fn);
                     }
                     None => {
-                        let v: Vec<Box<dyn Fn(Option<&V>) + 'static>> = vec![boxed_fn];
+                        let v: Vec<Box<dyn Fn(&Self, Option<&V>) + 'static>> = vec![boxed_fn];
                         listeners.insert(event, v);
                     }
                 }
@@ -115,7 +115,7 @@ where
 
             match listeners.get(&event) {
                 Some(listeners_fns) => {
-                    let _results = listeners_fns.iter().map(|l| l(value)).collect::<()>();
+                    let _results = listeners_fns.iter().map(|l| l(&self, value)).collect::<()>();
                     Ok(())
                 }
                 None => Ok(()),

@@ -83,7 +83,7 @@ where
 {
     fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
-        F: Fn(Option<&V>) + 'static,
+        F: Fn(&BusRef<E, V>, Option<&V>) + 'static
     {
         if let Ok(bus_lock) = self.aquire_bus_lock() {
             bus_lock.on(event, f)
@@ -147,12 +147,12 @@ mod test {
         let status = Rc::new(RefCell::new(Status::Stopped));
         let status_closure = Rc::clone(&status);
         let status_closure_2 = Rc::clone(&status);
-        bus.on(EventType::Start, move |_| {
+        bus.on(EventType::Start, move |_, _| {
             *status_closure.borrow_mut() = Status::Started;
         })
         .unwrap();
 
-        bus.on(EventType::Stop, move |_| {
+        bus.on(EventType::Stop, move |_, _| {
             *status_closure_2.borrow_mut() = Status::Stopped;
         })
         .unwrap();
@@ -173,7 +173,7 @@ mod test {
         let bus: EventBus<u8, ()> = EventBus::unbound();
         let status = Rc::new(RefCell::new(0));
         let status2 = Rc::clone(&status);
-        bus.on(1u8, move |_| {
+        bus.on(1u8, move |_, _| {
             *status2.borrow_mut() += 1;
         })
         .unwrap();
@@ -195,7 +195,7 @@ mod test {
 
         let t1 = std::thread::spawn(move || {
             bus_clone
-                .on(EventType::Start, move |_| {
+                .on(EventType::Start, move |_, _| {
                     let mut status_lock = status.lock().unwrap();
                     *status_lock = Status::Started;
                 })
@@ -222,7 +222,7 @@ mod test {
         });
 
         bus_clone
-            .on(EventType::Start, move |_| {
+            .on(EventType::Start, move |_, _| {
                 let mut status_lock = status.lock().unwrap();
                 *status_lock = Status::Started;
             })
@@ -240,7 +240,7 @@ mod test {
         let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
         let status_closure = Rc::clone(&status);
 
-        bus.on(EventType::Start, move |startup_data| {
+        bus.on(EventType::Start, move |_, startup_data: Option<&u8>| {
             *status_closure.borrow_mut() = Some(*startup_data.unwrap());
         })
         .unwrap();
@@ -260,6 +260,31 @@ mod test {
             bus.emit_with_value(EventType::Start, Some(&i))
                 .expect("Failed to emit");
         }
+    }
+
+    #[test]
+    fn re_emit() {
+        let bus: EventBus<EventType, u8> = EventBus::unbound();
+        // let bus_2: EventBus<EventType, u8> = bus.clone();
+        let status: Rc<RefCell<Option<u8>>> = Rc::new(RefCell::new(None));
+        let status_closure = Rc::clone(&status);
+        let status_closure_2 = Rc::clone(&status);
+
+        bus.on(EventType::Start, move |inner_bus, startup_data| {
+            *status_closure.borrow_mut() = Some(*startup_data.unwrap());
+            inner_bus.emit(EventType::Stop).expect("Cannot emit STOP event");
+        })
+        .unwrap();
+
+        bus.on(EventType::Stop, move |_, _| {
+            *status_closure_2.borrow_mut() = None;
+        })
+        .unwrap();
+
+        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
+
+        assert_eq!(*status.borrow(), None);
+        assert_eq!(bus.event_count(), 2);
     }
 }
 
