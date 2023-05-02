@@ -72,7 +72,8 @@ impl<E, V> EventEmitter<E, V> for BusRef<E, V>
 where
     E: Hash + Eq,
 {
-    /// Adds a listener `f` for and `event`
+    /// Adds a listener for `event` that will call `f` when said
+    /// event is fired.
     fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
         F: Fn(&Self, Option<&V>) + 'static,

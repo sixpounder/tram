@@ -1,7 +1,4 @@
-use std::{
-    hash::Hash,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
-};
+use std::{hash::Hash, sync::Arc};
 
 use crate::prelude::{BusRef, Error, EventEmitter};
 
@@ -43,38 +40,36 @@ use crate::prelude::{BusRef, Error, EventEmitter};
 /// assert_eq!(bus.event_count(), 1);
 /// ```
 pub struct EventBus<E, V> {
-    bus: Arc<Mutex<BusRef<E, V>>>,
+    bus: Arc<BusRef<E, V>>,
 }
 
 impl<E, V> EventBus<E, V> {
     /// Creates an unbound bus that can emit any number of events
     pub fn unbound() -> Self {
         Self {
-            bus: Arc::new(Mutex::new(BusRef::unbound())),
+            bus: Arc::new(BusRef::unbound()),
         }
     }
 
     /// Creates a bound bus that can emit up to `limit` events
     pub fn bound(limit: usize) -> Self {
         Self {
-            bus: Arc::new(Mutex::new(BusRef::bound(limit))),
+            bus: Arc::new(BusRef::bound(limit)),
         }
     }
 
     /// Returns `true` if this bus has exausted its allowed max number of emits
     pub fn disconnected(&self) -> bool {
-        let bus_lock = self.aquire_bus_lock().unwrap();
+        let bus_lock = self.bus_ref();
         bus_lock.disconnected()
     }
 
-    fn aquire_bus_lock(
-        &self,
-    ) -> Result<MutexGuard<'_, BusRef<E, V>>, PoisonError<MutexGuard<'_, BusRef<E, V>>>> {
-        self.bus.lock()
+    fn bus_ref(&self) -> &BusRef<E, V> {
+        self.bus.as_ref()
     }
 
     pub fn event_count(&self) -> usize {
-        self.aquire_bus_lock().unwrap().event_count()
+        self.bus_ref().event_count()
     }
 }
 
@@ -84,13 +79,9 @@ where
 {
     fn on<F>(&self, event: E, f: F) -> Result<(), Error>
     where
-        F: Fn(&BusRef<E, V>, Option<&V>) + 'static
+        F: Fn(&BusRef<E, V>, Option<&V>) + 'static,
     {
-        if let Ok(bus_lock) = self.aquire_bus_lock() {
-            bus_lock.on(event, f)
-        } else {
-            Err(Error::BusLock)
-        }
+        self.bus_ref().on(event, f)
     }
 
     fn emit(&self, event: E) -> Result<(), Error> {
@@ -98,11 +89,7 @@ where
     }
 
     fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
-        if let Ok(bus_lock) = self.aquire_bus_lock() {
-            bus_lock.emit_with_value(event, value)
-        } else {
-            Err(Error::BusLock)
-        }
+        self.bus_ref().emit_with_value(event, value)
     }
 }
 
@@ -116,15 +103,14 @@ impl<E, V> Clone for EventBus<E, V> {
 
 unsafe impl<E, V> Send for EventBus<E, V> where E: Send {}
 
-unsafe impl<E, V> Sync for EventBus<E, V> where E: Sync {}
+unsafe impl<E, V> Sync for EventBus<E, V> where E: Send {}
 
 #[cfg(test)]
 mod test {
     use super::*;
 
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
+    use std::{cell::RefCell, rc::Rc, sync::Mutex};
+        
     #[derive(PartialEq, Eq, Hash)]
     enum EventType {
         Start,
@@ -158,12 +144,14 @@ mod test {
         })
         .unwrap();
 
-        bus.emit(EventType::Start).expect("Failed to emit");
+        bus.emit(EventType::Start)
+            .expect("Failed to emit START event");
 
         assert_eq!(*status.borrow(), Status::Started);
         assert_eq!(bus.event_count(), 1);
 
-        bus.emit(EventType::Stop).expect("Failed to emit");
+        bus.emit(EventType::Stop)
+            .expect("Failed to emit STOP event");
 
         assert_eq!(*status.borrow(), Status::Stopped);
         assert_eq!(bus.event_count(), 2);
@@ -273,7 +261,9 @@ mod test {
 
         bus.on(EventType::Start, move |inner_bus, startup_data| {
             *status_closure.borrow_mut() = Some(*startup_data.unwrap());
-            inner_bus.emit(EventType::Stop).expect("Cannot emit STOP event");
+            inner_bus
+                .emit(EventType::Stop)
+                .expect("Cannot emit STOP event");
         })
         .unwrap();
 
@@ -282,11 +272,10 @@ mod test {
         })
         .unwrap();
 
-        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
+        bus.emit_with_value(EventType::Start, Some(&123))
+            .expect("Failed to emit");
 
         assert_eq!(*status.borrow(), None);
         assert_eq!(bus.event_count(), 2);
     }
 }
-
-

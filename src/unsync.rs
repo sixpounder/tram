@@ -1,4 +1,4 @@
-use std::{cell::RefCell, hash::Hash, rc::Rc};
+use std::{hash::Hash, rc::Rc};
 
 use crate::prelude::{BusRef, Error, EventEmitter};
 
@@ -38,7 +38,7 @@ use crate::prelude::{BusRef, Error, EventEmitter};
 /// assert_eq!(bus.event_count(), 1);
 /// ```
 pub struct EventBus<E, V> {
-    bus: Rc<RefCell<BusRef<E, V>>>
+    bus: Rc<BusRef<E, V>>,
 }
 
 impl<E, V> EventBus<E, V> {
@@ -53,23 +53,21 @@ impl<E, V> EventBus<E, V> {
     }
 
     fn construct(bus: BusRef<E, V>) -> Self {
-        Self {
-            bus: Rc::new(RefCell::new(bus)),
-        }
+        Self { bus: Rc::new(bus) }
     }
 
     /// Returns `true` if this bus has exausted its allowed max number of emits.
     ///
     /// This method can panic if the bus can't be locked for inquiry.
     pub fn disconnected(&self) -> bool {
-        self.bus.borrow().disconnected()
+        self.bus.disconnected()
     }
 
     /// The current number of events emitted on this bus.
     ///
     /// This method can panic if the bus can't be locked for inquiry.
     pub fn event_count(&self) -> usize {
-        self.bus.borrow().event_count()
+        self.bus.event_count()
     }
 }
 
@@ -81,11 +79,12 @@ where
     where
         F: Fn(&BusRef<E, V>, Option<&V>) + 'static,
     {
-        if let Ok(bus_lock) = self.bus.try_borrow_mut() {
-            bus_lock.on(event, f)
-        } else {
-            Err(Error::BusLock)
-        }
+        // if let Ok(bus_lock) = self.bus.try_borrow_mut() {
+        //     bus_lock.on(event, f)
+        // } else {
+        //     Err(Error::BusLock)
+        // }
+        self.bus.on(event, f)
     }
 
     fn emit(&self, event: E) -> Result<(), Error> {
@@ -93,11 +92,12 @@ where
     }
 
     fn emit_with_value(&self, event: E, value: Option<&V>) -> Result<(), Error> {
-        if let Ok(bus_lock) = self.bus.try_borrow() {
-            bus_lock.emit_with_value(event, value)
-        } else {
-            Err(Error::BusLock)
-        }
+        // if let Ok(bus_lock) = self.bus.try_borrow() {
+        //     bus_lock.emit_with_value(event, value)
+        // } else {
+        //     Err(Error::BusLock)
+        // }
+        self.bus.emit_with_value(event, value)
     }
 }
 
@@ -113,8 +113,7 @@ impl<E, V> Clone for EventBus<E, V> {
 mod test {
     use super::*;
 
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::{cell::RefCell, rc::Rc};
 
     #[derive(PartialEq, Eq, Hash)]
     enum EventType {
@@ -218,7 +217,9 @@ mod test {
 
         bus.on(EventType::Start, move |inner_bus, startup_data| {
             *status_closure.borrow_mut() = Some(*startup_data.unwrap());
-            inner_bus.emit(EventType::Stop).expect("Cannot emit STOP event");
+            inner_bus
+                .emit(EventType::Stop)
+                .expect("Cannot emit STOP event");
         })
         .unwrap();
 
@@ -227,11 +228,10 @@ mod test {
         })
         .unwrap();
 
-        bus.emit_with_value(EventType::Start, Some(&123)).expect("Failed to emit");
+        bus.emit_with_value(EventType::Start, Some(&123))
+            .expect("Failed to emit");
 
         assert_eq!(*status.borrow(), None);
         assert_eq!(bus.event_count(), 2);
     }
 }
-
-

@@ -32,12 +32,12 @@
 //! bus.on(EventType::Start, move |_bus, _| {
 //!     *status_closure.borrow_mut() = Status::Started;
 //! })
-//! .unwrap();
+//! .expect("Failed to register listener");
 //!
 //! bus.on(EventType::Stop, move |_bus, _| {
 //!     *status_closure_2.borrow_mut() = Status::Stopped;
 //! })
-//! .unwrap();
+//! .expect("Failed to register listener");
 //!
 //! bus.emit(EventType::Start).expect("Failed to emit");
 //!
@@ -52,7 +52,7 @@
 //!
 //! ## Using it in threads
 //!
-//! ```ignore
+//! ```
 //! use tram::{prelude::*, sync::EventBus};
 //! use std::sync::{Arc, Mutex};
 //!
@@ -74,21 +74,18 @@
 //! let status = Arc::new(Mutex::new(Status::Stopped));
 //! let final_status = Arc::clone(&status);
 //!
-//! let t1 = std::thread::spawn(move || {
-//!     bus.on(EventType::Start, move |_bus, _| {
-//!         let mut status_lock = status.lock().unwrap();
-//!         *status_lock = Status::Started;
-//!     }).unwrap();
-//! });
+//! bus.on(EventType::Start, move |_bus, _| {
+//!     let mut status_lock = status.lock().expect("Could not lock status");
+//!     *status_lock = Status::Started;
+//! }).expect("Could not register listener");
 //!
 //! let t2 = std::thread::spawn(move || {
-//!     bus_clone.emit(EventType::Start).unwrap();
+//!     bus_clone.emit(EventType::Start).expect("Could not emit start event");
 //! });
 //!
-//! t1.join().unwrap();
 //! t2.join().unwrap();
 //!
-//! let final_status_lock = final_status.lock().unwrap();
+//! let final_status_lock = final_status.lock().expect("Could not lock final status");
 //! assert_eq!(*final_status_lock, Status::Started)
 //! ```
 //!
